@@ -6,6 +6,7 @@ ValhallaNodes brings World of Warcraft gathering nodes back from the afterlife. 
 
 ## Features
 - Scrape Herbalism, Mining, Fishing, Gas Cloud, Treasure and Archaeology nodes from WoWHead
+- Visits every node's object page and uses its **Maps** tab to collect coordinates
 - Supports different expansions (selectable in the GUI)
 - Converts map and node names to GatherMate2 IDs using editable JSON lookup files
 - Exports Lua files for each node type
@@ -33,6 +34,12 @@ Map and node IDs are loaded from `map_ids.json` and `node_ids.json`. Edit these 
 ## Running Tests
 Run all tests with `python -m pytest`.
 
+
+## Prerequisites and Limitations
+ValhallaNodes requires an active internet connection. The script visits each
+Wowhead object page and reads the **Maps** tab to retrieve coordinates.
+Scraping many pages can be slow and excessive requests may be throttled by
+Wowhead.
 
 ## Disclaimer
 This project is not affiliated with Blizzard Entertainment. Use responsibly!

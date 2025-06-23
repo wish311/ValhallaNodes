@@ -33,3 +33,7 @@ Map and node IDs are loaded from `map_ids.json` and `node_ids.json`. Edit these 
 
 ## Disclaimer
 This project is not affiliated with Blizzard Entertainment. Use responsibly!
+
+## License
+This project is released under the [MIT License](LICENSE).
+

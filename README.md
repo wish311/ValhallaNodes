@@ -15,7 +15,9 @@ ValhallaNodes brings World of Warcraft gathering nodes back from the afterlife. 
 Run the `valhalla_nodes.py` script. Select the node types and expansion you want, choose an output directory, and click **Run**. Lua files will be created in the selected directory. Copy them into your `World of Warcraft/_retail_/Interface/AddOns/GatherMate2_Data/` folder.
 
 ## Extending Map and Node IDs
-Map and node IDs are loaded from `map_ids.json` and `node_ids.json`. Edit these files to add new expansions or nodes. Each file uses simple key/value pairs to map names to IDs.
+Map and node IDs are loaded from `map_ids.json` and `node_ids.json`. Edit these files to add new maps or nodes. Each file uses simple key/value pairs to map names to IDs.
+
+Expansions are mapped to lists of zone IDs using `expansions.json`. The GUI drop-down is populated from this file so you can easily add support for future content.
 
 ```json
 {

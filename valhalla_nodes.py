@@ -190,9 +190,12 @@ class ValhallaNodesApp:
 
         # Expansion dropdown
         tk.Label(frame, text="Expansion:").grid(row=1, column=0, sticky="w", pady=(5, 0))
-        self.expansion_var = tk.StringVar(value="Dragonflight")
+        # Expansion mapping loaded from JSON so users can extend it
+        self.expansion_map = load_json("expansions.json")
+        expansions = list(self.expansion_map) if self.expansion_map else ["Dragonflight", "The War Within"]
+        self.expansion_var = tk.StringVar(value=expansions[0])
         self.expansion_box = ttk.Combobox(frame, textvariable=self.expansion_var, state="readonly")
-        self.expansion_box["values"] = ["Dragonflight", "The War Within"]
+        self.expansion_box["values"] = expansions
         self.expansion_box.grid(row=1, column=1, sticky="w", pady=(5, 0))
 
         # Output directory selector
@@ -226,6 +229,7 @@ class ValhallaNodesApp:
 
     def run(self) -> None:
         expansion = self.expansion_var.get()
+        allowed_ids = set(self.expansion_map.get(expansion, []))
         out_dir = self.out_dir_var.get()
         for node_type, var in self.node_vars.items():
             if not var.get():
@@ -233,6 +237,13 @@ class ValhallaNodesApp:
             nodes = scrape_nodes(node_type, expansion, self.log_write)
             if not nodes:
                 continue
+            if allowed_ids:
+                filtered = []
+                for item in nodes:
+                    m_id = self.map_ids.get(item["map_name"])
+                    if m_id in allowed_ids:
+                        filtered.append(item)
+                nodes = filtered
             export_lua(node_type, nodes, self.map_ids, self.node_ids, out_dir)
         messagebox.showinfo("ValhallaNodes", "Export complete")
 

@@ -30,6 +30,9 @@ Map and node IDs are loaded from `map_ids.json` and `node_ids.json`. Edit these 
   "Copper Vein": 181
 }
 ```
+## Running Tests
+Run all tests with `python -m pytest`.
+
 
 ## Disclaimer
 This project is not affiliated with Blizzard Entertainment. Use responsibly!

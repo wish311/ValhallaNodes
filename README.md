@@ -36,3 +36,7 @@ Run all tests with `python -m pytest`.
 
 ## Disclaimer
 This project is not affiliated with Blizzard Entertainment. Use responsibly!
+
+## License
+This project is released under the [MIT License](LICENSE).
+

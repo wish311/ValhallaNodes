@@ -13,6 +13,16 @@ import re
 import sys
 import requests
 from bs4 import BeautifulSoup
+
+
+# URLs for gathering object lists on Wowhead
+WOWHEAD_OBJECT_PAGES = {
+    "herbalism": "https://www.wowhead.com/objects/herbs",
+    "mining": "https://www.wowhead.com/objects/mining",
+    "fishing": "https://www.wowhead.com/objects/fishing",
+    "treasure": "https://www.wowhead.com/objects/treasure",
+    "gas": "https://www.wowhead.com/objects/gas-clouds",
+}
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
@@ -36,41 +46,78 @@ def save_json(path: str, data: dict) -> None:
 # ------------------------- Scraping Logic ---------------------------
 
 def scrape_nodes(node_type: str, expansion: str, log_callback) -> list[dict]:
-    """Scrape nodes of a specific type from WoWHead.
+    """Scrape nodes of a specific type from Wowhead using object pages.
 
     Returns a list of dictionaries with ``map_name``, ``node_name`` and
-    ``coords`` (a tuple of x, y). The scraping is intentionally generic
-    to cope with minor page structure changes. Any errors will be logged
-    through ``log_callback``.
+    ``coords`` (a tuple of x, y). Any errors encountered are logged via
+    ``log_callback``.
     """
-    url = f"https://www.wowhead.com/{expansion.lower().replace(' ', '-')}/{node_type.lower()}"
-    log_callback(f"Fetching {url}\n")
+    page_url = WOWHEAD_OBJECT_PAGES.get(node_type.lower())
+    if not page_url:
+        log_callback(f"No Wowhead page for {node_type}\n")
+        return []
+
+    log_callback(f"Fetching {page_url}\n")
     try:
-        res = requests.get(url, timeout=15)
+        res = requests.get(page_url, timeout=15)
         res.raise_for_status()
     except requests.RequestException as exc:
-        log_callback(f"Failed to fetch {url}: {exc}\n")
+        log_callback(f"Failed to fetch {page_url}: {exc}\n")
         return []
 
     soup = BeautifulSoup(res.text, "html.parser")
 
-    # This selector is intentionally broad; the WoWHead layout may change.
-    # The code looks for table rows with data-map or data-coords attributes.
-    data = []
-    for row in soup.select("tr[data-map]"):
-        map_name = row.get("data-map")
-        coords = row.get("data-coords")
-        name_cell = row.find("td", class_=re.compile("name"))
-        node_name = name_cell.get_text(strip=True) if name_cell else node_type
-        if map_name and coords:
-            try:
-                x_str, y_str = coords.split(",")
-                x, y = float(x_str), float(y_str)
-            except ValueError:
-                continue
-            data.append({"map_name": map_name, "node_name": node_name, "coords": (x, y)})
-    log_callback(f"Parsed {len(data)} nodes from {url}\n")
-    return data
+    script_text = next(
+        (s.string or s.get_text() for s in soup.find_all("script") if "new Listview" in (s.string or s.get_text() or "")),
+        None,
+    )
+    if not script_text:
+        log_callback(f"No list data on {page_url}\n")
+        return []
+
+    match = re.search(r"new Listview\((\{.*?\})\);", script_text, flags=re.S)
+    if not match:
+        log_callback(f"Failed to parse list data on {page_url}\n")
+        return []
+    data_str = re.sub(r",\s*\"extraCols\":\[.*?\]\s*", "", match.group(1))
+    try:
+        objects = json.loads(data_str).get("data", [])
+    except json.JSONDecodeError as exc:
+        log_callback(f"Failed to decode list data on {page_url}: {exc}\n")
+        return []
+
+    nodes: list[dict] = []
+    for obj in objects:
+        obj_id = obj.get("id")
+        obj_name = obj.get("displayName") or obj.get("name") or node_type
+        if not obj_id:
+            continue
+        obj_url = f"https://www.wowhead.com/object={obj_id}"
+        log_callback(f"  Fetching {obj_url}\n")
+        try:
+            obj_res = requests.get(obj_url, timeout=15)
+            obj_res.raise_for_status()
+        except requests.RequestException as exc:
+            log_callback(f"    Failed to fetch {obj_url}: {exc}\n")
+            continue
+        m = re.search(r"g_mapperData\s*=\s*(\{.*?\});", obj_res.text, flags=re.S)
+        if not m:
+            continue
+        try:
+            mapper = json.loads(m.group(1))
+        except json.JSONDecodeError:
+            continue
+        for zone_entries in mapper.values():
+            for entry in zone_entries:
+                map_name = entry.get("uiMapName")
+                for x, y in entry.get("coords", []):
+                    try:
+                        nodes.append({"map_name": map_name, "node_name": obj_name, "coords": (float(x), float(y))})
+                    except Exception:
+                        continue
+
+    log_callback(f"Parsed {len(nodes)} nodes from {page_url}\n")
+    return nodes
 
 
 # ------------------------- Lua Export Logic -------------------------

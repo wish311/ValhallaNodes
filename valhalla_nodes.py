@@ -7,10 +7,24 @@ process user friendly.
 """
 from __future__ import annotations
 
+
+# Automatische Modulinstallation
+import sys
+import subprocess
+def _ensure_modules(modules):
+    import importlib
+    for mod in modules:
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            print(f"[ValhallaNodes] Installiere fehlendes Modul: {mod}")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", mod])
+
+_ensure_modules(["requests", "bs4", "tkinter"])
+
 import json
 import os
 import re
-import sys
 import requests
 from bs4 import BeautifulSoup
 
@@ -109,6 +123,8 @@ def scrape_nodes(node_type: str, expansion: str, log_callback) -> list[dict]:
             continue
         for zone_entries in mapper.values():
             for entry in zone_entries:
+                if not isinstance(entry, dict):
+                    continue
                 map_name = entry.get("uiMapName")
                 for x, y in entry.get("coords", []):
                     try:

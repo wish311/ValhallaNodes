@@ -8,7 +8,7 @@ process user friendly.
 from __future__ import annotations
 
 
-# Automatische Modulinstallation
+# Automatic module installation
 import sys
 import subprocess
 def _ensure_modules(modules):

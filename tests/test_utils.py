@@ -4,7 +4,7 @@ import tempfile
 
 import pytest
 
-from valhalla_nodes import load_json, format_coords, normalize_coord, export_lua, run_export
+from valhalla_nodes import load_json, format_coords, normalize_coord, export_lua, run_export, _fetch, WAYBACK_PREFIX
 
 
 def test_load_json_missing(tmp_path):
@@ -69,10 +69,48 @@ def test_export_lua_logs_and_counts_skipped_unknown_nodes(tmp_path):
     assert any("Skipped 1" in msg for msg in messages)
 
 
+class _FakeResponse:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise __import__("requests").HTTPError(f"{self.status_code}")
+
+
+class _FakeSession:
+    def __init__(self, responses):
+        self._responses = responses
+        self.calls = []
+
+    def get(self, url, timeout=None):
+        self.calls.append(url)
+        return self._responses.pop(0)
+
+
+def test_fetch_falls_back_to_wayback_on_403():
+    session = _FakeSession([_FakeResponse(403), _FakeResponse(200, "archived content")])
+    messages = []
+    res = _fetch(session, "https://www.wowhead.com/object=1618", messages.append)
+    assert res is not None
+    assert res.text == "archived content"
+    assert session.calls[1] == f"{WAYBACK_PREFIX}https://www.wowhead.com/object=1618"
+    assert any("blocked" in m.lower() for m in messages)
+    assert any("wayback" in m.lower() for m in messages)
+
+
+def test_fetch_403_without_fallback_returns_none():
+    session = _FakeSession([_FakeResponse(403)])
+    res = _fetch(session, "https://www.wowhead.com/object=1618", print, use_wayback_fallback=False)
+    assert res is None
+    assert len(session.calls) == 1
+
+
 def test_run_export_filters_by_expansion_and_exports(tmp_path, monkeypatch):
     import valhalla_nodes
 
-    def fake_scrape(node_type, expansion, log_callback, session=None):
+    def fake_scrape(node_type, expansion, log_callback, session=None, use_wayback_fallback=True):
         return [
             {"map_name": "InZone", "node_name": "Foo", "coords": (0.1, 0.2)},
             {"map_name": "OutOfZone", "node_name": "Foo", "coords": (0.3, 0.4)},

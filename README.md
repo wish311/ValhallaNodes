@@ -51,18 +51,23 @@ Wowhead.
 
 Wowhead now sits behind bot-protection (Cloudflare/AWS WAF) that can return
 `403 Forbidden` for automated requests regardless of network. The scraper
-sends browser-like headers and retries transient failures, but if you see
-"Wowhead blocked this request" in the log, it's this protection kicking in -
-try again later or from a different network.
+sends browser-like headers and retries transient failures, and if Wowhead
+still blocks a request it automatically falls back to the closest archived
+snapshot on the [Wayback Machine](https://web.archive.org). This keeps the
+tool working, but **archived data can be years stale** (missing newer
+expansions/zones entirely) - every fallback use is logged loudly. Pass
+`--no-wayback-fallback` in headless mode to fail instead of using
+potentially-stale archived data.
 
-## Known Limitations / Not Yet Verified
+## Known Limitations
 - **Coordinate scale**: GatherMate2 stores coordinates as 0-1 fractions.
   Wowhead's page data is percentage-scaled (0-100), so the scraper divides
-  by 100 (`normalize_coord`) before packing. This matches known Wowhead/
-  GatherMate2 conventions but has not been re-verified against a live
-  Wowhead payload (the bot-protection above blocked that check at the time
-  this was written) - spot-check one exported node against its in-game
-  position before trusting a full export.
+  by 100 (`normalize_coord`) before packing. Verified against an archived
+  Wowhead object page (web.archive.org snapshot of `object=1618`, Peacebloom)
+  whose `g_mapperData` coords are plain 0-100 values (e.g. `[32.9,40.4]`),
+  confirming the /100 conversion is needed - live Wowhead currently 403s
+  automated requests, so the archive was used as a stand-in for a live
+  payload check.
 - **Midnight (patch 12.0) zones**: not yet added to `expansions.json` /
   `map_ids.json`. Blizzard's Midnight "addon purge" targets combat addons
   (DBM, WeakAuras, damage meters, nameplates) and does not restrict

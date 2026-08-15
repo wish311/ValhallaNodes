@@ -86,8 +86,37 @@ def normalize_coord(x: float, y: float) -> tuple[float, float]:
     return x / 100.0, y / 100.0
 
 
-def _fetch(session: requests.Session, url: str, log_callback) -> requests.Response | None:
-    """GET a URL, logging a clear message on bot-block (403) or network failure."""
+WAYBACK_PREFIX = "https://web.archive.org/web/2/"
+
+
+def _fetch_from_wayback(session: requests.Session, url: str, log_callback) -> requests.Response | None:
+    """Fall back to the Wayback Machine's most recent archived snapshot of
+    ``url``. Used when live Wowhead blocks the request outright - this keeps
+    the tool usable, but archived data can be years stale (missing newer
+    expansions/zones entirely), so callers should treat it as degraded, not
+    equivalent, and this is logged loudly every time it's used.
+    """
+    archive_url = f"{WAYBACK_PREFIX}{url}"
+    log_callback(f"  Falling back to Wayback Machine archive for {url} - data may be stale.\n")
+    try:
+        res = session.get(archive_url, timeout=25)
+        res.raise_for_status()
+    except requests.RequestException as exc:
+        log_callback(f"  Wayback Machine fallback also failed for {url}: {exc}\n")
+        return None
+    return res
+
+
+def _fetch(
+    session: requests.Session,
+    url: str,
+    log_callback,
+    use_wayback_fallback: bool = True,
+) -> requests.Response | None:
+    """GET a URL, logging a clear message on bot-block (403) or network
+    failure, and optionally falling back to an archived Wayback Machine
+    snapshot when Wowhead itself blocks the request.
+    """
     try:
         res = session.get(url, timeout=15)
     except requests.RequestException as exc:
@@ -96,9 +125,10 @@ def _fetch(session: requests.Session, url: str, log_callback) -> requests.Respon
     if res.status_code == 403:
         log_callback(
             f"Wowhead blocked this request (403 Forbidden) fetching {url}. "
-            "This is Wowhead's bot protection rejecting the request - try again "
-            "later or from a different network.\n"
+            "This is Wowhead's bot protection rejecting the request.\n"
         )
+        if use_wayback_fallback:
+            return _fetch_from_wayback(session, url, log_callback)
         return None
     try:
         res.raise_for_status()
@@ -108,12 +138,20 @@ def _fetch(session: requests.Session, url: str, log_callback) -> requests.Respon
     return res
 
 
-def scrape_nodes(node_type: str, expansion: str, log_callback, session: requests.Session | None = None) -> list[dict]:
+def scrape_nodes(
+    node_type: str,
+    expansion: str,
+    log_callback,
+    session: requests.Session | None = None,
+    use_wayback_fallback: bool = True,
+) -> list[dict]:
     """Scrape nodes of a specific type from Wowhead using object pages.
 
     Returns a list of dictionaries with ``map_name``, ``node_name`` and
     ``coords`` (a tuple of x, y fractions in the 0-1 range). Any errors
-    encountered are logged via ``log_callback``.
+    encountered are logged via ``log_callback``. If Wowhead blocks the
+    request (403) and ``use_wayback_fallback`` is True, an archived
+    Wayback Machine snapshot is used instead (may be stale).
     """
     page_url = WOWHEAD_OBJECT_PAGES.get(node_type.lower())
     if not page_url:
@@ -123,7 +161,7 @@ def scrape_nodes(node_type: str, expansion: str, log_callback, session: requests
     session = session or build_session()
 
     log_callback(f"Fetching {page_url}\n")
-    res = _fetch(session, page_url, log_callback)
+    res = _fetch(session, page_url, log_callback, use_wayback_fallback=use_wayback_fallback)
     if res is None:
         return []
 
@@ -156,7 +194,7 @@ def scrape_nodes(node_type: str, expansion: str, log_callback, session: requests
             continue
         obj_url = f"https://www.wowhead.com/object={obj_id}"
         log_callback(f"  Fetching {obj_url}\n")
-        obj_res = _fetch(session, obj_url, log_callback)
+        obj_res = _fetch(session, obj_url, log_callback, use_wayback_fallback=use_wayback_fallback)
         if obj_res is None:
             continue
         m = re.search(r"g_mapperData\s*=\s*(\{.*?\});", obj_res.text, flags=re.S)
@@ -252,13 +290,16 @@ def run_export(
     node_ids: dict,
     log_callback,
     session: requests.Session | None = None,
+    use_wayback_fallback: bool = True,
 ) -> None:
     """Scrape and export each requested node type. Shared by the GUI and the
     headless CLI so they can't drift out of sync."""
     allowed_ids = set(expansion_map.get(expansion, []))
     session = session or build_session()
     for node_type in node_types:
-        nodes = scrape_nodes(node_type, expansion, log_callback, session=session)
+        nodes = scrape_nodes(
+            node_type, expansion, log_callback, session=session, use_wayback_fallback=use_wayback_fallback
+        )
         if not nodes:
             continue
         if allowed_ids:
@@ -368,6 +409,11 @@ def run_cli(argv: list[str]) -> int:
     parser.add_argument("--map-ids", default="map_ids.json")
     parser.add_argument("--node-ids", default="node_ids.json")
     parser.add_argument("--expansions", default="expansions.json")
+    parser.add_argument(
+        "--no-wayback-fallback",
+        action="store_true",
+        help="Fail (instead of falling back to a possibly-stale Wayback Machine archive) when Wowhead blocks a request",
+    )
     args = parser.parse_args(argv)
 
     expansion_map = load_json(args.expansions)
@@ -379,7 +425,16 @@ def run_cli(argv: list[str]) -> int:
     def log_callback(text: str) -> None:
         print(text, end="")
 
-    run_export(node_types, expansion, args.out_dir, expansion_map, map_ids, node_ids, log_callback)
+    run_export(
+        node_types,
+        expansion,
+        args.out_dir,
+        expansion_map,
+        map_ids,
+        node_ids,
+        log_callback,
+        use_wayback_fallback=not args.no_wayback_fallback,
+    )
     return 0
 
 
